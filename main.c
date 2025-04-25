@@ -57,18 +57,32 @@ typedef struct WindowManager {
 	int current_ws;
 } WindowManager;
 
-void WindowManager_GrabKeys(WindowManager *wm)
+void WindowManager_SwitchWs(WindowManager *wm, int wsIndex)
 {
-	KeyCode code = XKeysymToKeycode(wm->dpy, XK_Return);
-	XGrabKey(wm->dpy, code, SUPER, wm->root, True, GrabModeAsync, GrabModeAsync);
+	if (wsIndex == wm->current_ws || wsIndex < 0 || wsIndex >= NUM_WORKSPACES)
+		return;
 
-	code = XKeysymToKeycode(wm->dpy, XK_q);
-	XGrabKey(wm->dpy, code, SUPER, wm->root, True, GrabModeAsync, GrabModeAsync);
-
-	for (int i = 0; i < NUM_WORKSPACES; i++) {
-		code = XKeysymToKeycode(wm->dpy, XK_1 + i);
-		XGrabKey(wm->dpy, code, SUPER, wm->root, True, GrabModeAsync, GrabModeAsync);
+	// hide all windows in the current ws
+	Workspace *ws = &wm->workspaces[wm->current_ws];
+	Client *c = ws->clients;
+	while (c) {
+		printf("%ld/n", c->win);
+		XUnmapWindow(wm->dpy, c->win);
+		c = c->next;
 	}
+
+	// switch wm
+	wm->current_ws = wsIndex;
+
+	// show all windows in the new ws
+	ws = &wm->workspaces[wm->current_ws];
+	c = ws->clients;
+	while (c) {
+		XMapWindow(wm->dpy, c->win);
+		c = c->next;
+	}
+
+	printf("Switched to workspace: %d\n", wsIndex + 1);
 }
 
 Window WindowManager_GetFocusedWindow(WindowManager *wm)
@@ -123,6 +137,11 @@ void WindowManager_OnKeyPressed(WindowManager *wm, XKeyEvent *e)
 		if (win != None)
 			WindowManager_CloseWindow(wm, win);
 	}
+
+	// switch workspace: SUPER + 1..9
+	if ((e->state & SUPER) && sym >= XK_1 && sym <= XK_9) {
+		WindowManager_SwitchWs(wm, sym - XK_1);
+	}
 }
 
 void WindowManager_OnMapRequeset(WindowManager *wm, XMapRequestEvent *e)
@@ -166,6 +185,20 @@ void WindowManager_run(WindowManager *wm)
 			XUnmapEvent *unmap = &ev.xunmap;
 			WindowManager_OnUnmap(wm, unmap);
 		}
+	}
+}
+
+void WindowManager_GrabKeys(WindowManager *wm)
+{
+	KeyCode code = XKeysymToKeycode(wm->dpy, XK_Return);
+	XGrabKey(wm->dpy, code, SUPER, wm->root, True, GrabModeAsync, GrabModeAsync);
+
+	code = XKeysymToKeycode(wm->dpy, XK_q);
+	XGrabKey(wm->dpy, code, SUPER, wm->root, True, GrabModeAsync, GrabModeAsync);
+
+	for (int i = 0; i < NUM_WORKSPACES; i++) {
+		code = XKeysymToKeycode(wm->dpy, XK_1 + i);
+		XGrabKey(wm->dpy, code, SUPER, wm->root, True, GrabModeAsync, GrabModeAsync);
 	}
 }
 
