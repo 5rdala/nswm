@@ -80,14 +80,48 @@ Window WindowManager_GetFocusedWindow(WindowManager *wm)
 	return child;
 }
 
+void WindowManager_CloseWindow(WindowManager *wm, Window win)
+{
+	Atom *protocols;
+	int n;
+	Atom wm_delete = XInternAtom(wm->dpy, "WM_DELETE_WINDOW", False);
+	if (XGetWMProtocols(wm->dpy, win, &protocols, &n)) {
+		for (int i = 0; i < n; i++) {
+			if (protocols[i] == wm_delete) {
+				XEvent msg = {0};
+				msg.xclient.type = ClientMessage;
+				msg.xclient.message_type = XInternAtom(wm->dpy, "WM_PROTOCOLS", True);
+				msg.xclient.display = wm->dpy;
+				msg.xclient.window = win;
+				msg.xclient.format = 32;
+				msg.xclient.data.l[0] = wm_delete;
+				msg.xclient.data.l[1] = CurrentTime;
+				XSendEvent(wm->dpy, win, False, NoEventMask, &msg);
+				XFree(protocols);
+				return;
+			}
+		}
+		XFree(protocols);
+	}
+	XDestroyWindow(wm->dpy, win);
+}
+
 void WindowManager_OnKeyPressed(WindowManager *wm, XKeyEvent *e)
 {
 	KeySym sym = XkbKeycodeToKeysym(wm->dpy, e->keycode, 0, 0);
 	printf("KeyCode: %d, Keysym: %s, State: %u\n", e->keycode, XKeysymToString(sym), e->state);
 
+	// launch term: SUPER + Return
 	if ((e->state & SUPER) && sym == XK_Return) {
 		const char *cmd[] = {"wezterm", NULL};
 		Spawn(cmd);
+	}
+
+	// close window: SUPER + Q
+	if ((e->state & SUPER) && sym == XK_q) {
+		Window win = WindowManager_GetFocusedWindow(wm);
+		if (win != None)
+			WindowManager_CloseWindow(wm, win);
 	}
 }
 
