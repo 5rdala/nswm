@@ -1,9 +1,10 @@
-#include <X11/XKBlib.h>
-#include <X11/Xlib.h>
-#include <X11/keysym.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+
+#include <X11/XKBlib.h>
+#include <X11/Xlib.h>
+#include <X11/keysym.h>
 
 // ======= utils
 
@@ -120,10 +121,60 @@ void WindowManager_CloseWindow(WindowManager *wm, Window win)
 	XDestroyWindow(wm->dpy, win);
 }
 
+void WindowManager_TileMasterAndStack(WindowManager *wm)
+{
+	XWindowAttributes wa;
+	XGetWindowAttributes(wm->dpy, wm->root, &wa);
+	int screen_width = wa.width;
+	int screen_height = wa.height;
+
+	Workspace *ws = &wm->workspaces[wm->current_ws];
+
+	int window_count = 0;
+	for (Client *c = ws->clients; c; c = c->next) {
+		window_count++;
+	}
+
+	if (window_count == 0)
+		return;
+
+	if (window_count >= 2) {
+		int master_width = screen_width * 0.5; // 50%
+		int master_height = screen_height;
+
+		int stack_width = screen_width - master_width;
+		int stack_height =
+			window_count - 1 == 0 ? screen_height : screen_height / (window_count - 1);
+
+		int x_offset_master = 0;
+		int x_offset_stack = master_width;
+		int y_offset_stack = 0;
+
+		Client *c = ws->clients;
+
+		if (c) {
+			XMoveResizeWindow(wm->dpy, c->win, x_offset_master, 0, master_width, master_height);
+			c = c->next;
+		}
+
+		while (c) {
+			XMoveResizeWindow(wm->dpy, c->win, x_offset_stack, y_offset_stack, stack_width,
+							  stack_height);
+			y_offset_stack += stack_height;
+			c = c->next;
+		}
+		return;
+	} else {
+		Client *c = ws->clients;
+		XMoveResizeWindow(wm->dpy, c->win, 0, 0, screen_width, screen_height);
+	}
+
+	XFlush(wm->dpy);
+}
+
 void WindowManager_OnKeyPressed(WindowManager *wm, XKeyEvent *e)
 {
 	KeySym sym = XkbKeycodeToKeysym(wm->dpy, e->keycode, 0, 0);
-	printf("KeyCode: %d, Keysym: %s, State: %u\n", e->keycode, XKeysymToString(sym), e->state);
 
 	// launch term: SUPER + Return
 	if ((e->state & SUPER) && sym == XK_Return) {
@@ -152,6 +203,7 @@ void WindowManager_OnMapRequeset(WindowManager *wm, XMapRequestEvent *e)
 
 	Workspace_AddClientToWs(&wm->workspaces[wm->current_ws], c);
 	XMapWindow(wm->dpy, e->window);
+	WindowManager_TileMasterAndStack(wm);
 }
 
 void WindowManager_OnUnmap(WindowManager *wm, XUnmapEvent *e)
@@ -168,6 +220,7 @@ void WindowManager_OnUnmap(WindowManager *wm, XUnmapEvent *e)
 		}
 		prev = &c->next;
 	}
+	WindowManager_TileMasterAndStack(wm);
 }
 
 void WindowManager_run(WindowManager *wm)
