@@ -1,0 +1,33 @@
+# General formatting options
+IndentWidth: 4        # Replace spaces with 4 spaces (you wanted tabs, but clang-format uses tabs when UseTab is set)
+TabWidth: 4           # Use 4 spaces per tab
+UseTab: Always        # Always use tabs for indentation
+
+# Break options
+ColumnLimit: 100  # Limit lines to 100 characters
+
+# Alignment and indentation
+AlignOperands: true  # Align operands for better readability
+AlignTrailingComments: false  # Do not align trailing comments
+ContinuationIndentWidth: 4  # Indent continuation lines by 4 spaces (will be tabs in your case)
+
+BraceWrapping:
+  AfterFunction: true  # Ensure braces for functions go on the next line
+  AfterClass: false      # Keep class braces on the same line
+  AfterControlStatement: MultiLine  # Keep control statements consistent
+  AfterEnum: false       # Keep enum braces on the same line
+  AfterNamespace: false  # Keep namespace braces on the same line
+  AfterStruct: false     # Keep struct braces on the same line
+  AfterUnion: false      # Keep union braces on the same line
+  BeforeElse: false      # Keep else on the same line
+  BeforeCatch: false     # Keep catch on the same line
+  IndentBraces: false    # Do not indent opening braces
+BreakBeforeBraces: Custom
+
+# Function style
+AllowShortFunctionsOnASingleLine: None  # Disable short functions on a single line
+
+# Extra settings (if you want to further tweak them later)
+SortIncludes: false  # Keep includes in their original order
+ReflowComments: true  # Enable reflow of comments
+IndentCaseLabels: false  # No special indentation for case labels
