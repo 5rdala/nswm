@@ -21,6 +21,7 @@ void Spawn(const char *cmd[])
 // ====== constants
 
 #define SUPER Mod4Mask
+#define SHIFT ShiftMask
 
 #define NUM_WORKSPACES 10
 
@@ -56,7 +57,47 @@ typedef struct WindowManager {
 	Window root;
 	Workspace workspaces[NUM_WORKSPACES];
 	int current_ws;
+	int last_ws;
+	int should_close;
 } WindowManager;
+
+void WindowManager_init(WindowManager *wm)
+{
+	wm->dpy = XOpenDisplay(NULL);
+	if (!wm->dpy) {
+		fprintf(stderr, "Can't open display\n");
+		exit(1);
+	}
+
+	wm->root = DefaultRootWindow(wm->dpy);
+	wm->current_ws = 0;
+	wm->should_close = 0;
+
+	for (int i = 0; i < NUM_WORKSPACES; i++)
+		wm->workspaces[i].clients = NULL;
+
+	XSelectInput(wm->dpy, wm->root, SubstructureRedirectMask | SubstructureNotifyMask);
+}
+
+void WindowManager_GrabKeys(WindowManager *wm)
+{
+	KeyCode code = XKeysymToKeycode(wm->dpy, XK_Return);
+	XGrabKey(wm->dpy, code, SUPER, wm->root, True, GrabModeAsync, GrabModeAsync);
+
+	code = XKeysymToKeycode(wm->dpy, XK_q);
+	XGrabKey(wm->dpy, code, SUPER, wm->root, True, GrabModeAsync, GrabModeAsync);
+
+	code = XKeysymToKeycode(wm->dpy, XK_q);
+	XGrabKey(wm->dpy, code, SUPER | SHIFT, wm->root, True, GrabModeAsync, GrabModeAsync);
+
+	code = XKeysymToKeycode(wm->dpy, XK_Escape);
+	XGrabKey(wm->dpy, code, SUPER, wm->root, True, GrabModeAsync, GrabModeAsync);
+
+	for (int i = 0; i < NUM_WORKSPACES; i++) {
+		code = XKeysymToKeycode(wm->dpy, XK_1 + i);
+		XGrabKey(wm->dpy, code, SUPER, wm->root, True, GrabModeAsync, GrabModeAsync);
+	}
+}
 
 void WindowManager_SwitchWs(WindowManager *wm, int wsIndex)
 {
@@ -67,12 +108,12 @@ void WindowManager_SwitchWs(WindowManager *wm, int wsIndex)
 	Workspace *ws = &wm->workspaces[wm->current_ws];
 	Client *c = ws->clients;
 	while (c) {
-		printf("%ld/n", c->win);
 		XUnmapWindow(wm->dpy, c->win);
 		c = c->next;
 	}
 
 	// switch wm
+	wm->last_ws = wm->current_ws;
 	wm->current_ws = wsIndex;
 
 	// show all windows in the new ws
@@ -176,6 +217,14 @@ void WindowManager_OnKeyPressed(WindowManager *wm, XKeyEvent *e)
 {
 	KeySym sym = XkbKeycodeToKeysym(wm->dpy, e->keycode, 0, 0);
 
+	// switch workspace: SUPER + 1..9
+	if ((e->state & SUPER) && sym >= XK_1 && sym <= XK_9)
+		WindowManager_SwitchWs(wm, sym - XK_1);
+
+	// switch to last workspace: SUPER + Escape
+	if ((e->state & SUPER) && sym == XK_Escape)
+		WindowManager_SwitchWs(wm, wm->last_ws);
+
 	// launch term: SUPER + Return
 	if ((e->state & SUPER) && sym == XK_Return) {
 		const char *cmd[] = {"wezterm", NULL};
@@ -189,10 +238,9 @@ void WindowManager_OnKeyPressed(WindowManager *wm, XKeyEvent *e)
 			WindowManager_CloseWindow(wm, win);
 	}
 
-	// switch workspace: SUPER + 1..9
-	if ((e->state & SUPER) && sym >= XK_1 && sym <= XK_9) {
-		WindowManager_SwitchWs(wm, sym - XK_1);
-	}
+	// close window manager: SUPER + SHIFT + Q
+	if ((e->state & (SUPER | SHIFT)) && sym == XK_q)
+		wm->should_close = 1;
 }
 
 void WindowManager_OnMapRequeset(WindowManager *wm, XMapRequestEvent *e)
@@ -227,7 +275,7 @@ void WindowManager_run(WindowManager *wm)
 {
 	XEvent ev;
 
-	while (!XNextEvent(wm->dpy, &ev)) {
+	while (!XNextEvent(wm->dpy, &ev) || wm->should_close) {
 		if (ev.type == KeyPress) {
 			XKeyEvent *ke = &ev.xkey;
 			WindowManager_OnKeyPressed(wm, ke);
@@ -241,35 +289,18 @@ void WindowManager_run(WindowManager *wm)
 	}
 }
 
-void WindowManager_GrabKeys(WindowManager *wm)
+void WindowManager_destroy(WindowManager *wm)
 {
-	KeyCode code = XKeysymToKeycode(wm->dpy, XK_Return);
-	XGrabKey(wm->dpy, code, SUPER, wm->root, True, GrabModeAsync, GrabModeAsync);
-
-	code = XKeysymToKeycode(wm->dpy, XK_q);
-	XGrabKey(wm->dpy, code, SUPER, wm->root, True, GrabModeAsync, GrabModeAsync);
-
 	for (int i = 0; i < NUM_WORKSPACES; i++) {
-		code = XKeysymToKeycode(wm->dpy, XK_1 + i);
-		XGrabKey(wm->dpy, code, SUPER, wm->root, True, GrabModeAsync, GrabModeAsync);
+		Client *c = wm->workspaces[i].clients;
+		while (c) {
+			XDestroyWindow(wm->dpy, c->win);
+			Client *temp = c;
+			c = c->next;
+			free(temp);
+		}
 	}
-}
-
-void WindowManager_init(WindowManager *wm)
-{
-	wm->dpy = XOpenDisplay(NULL);
-	if (!wm->dpy) {
-		fprintf(stderr, "Can't open display\n");
-		exit(1);
-	}
-
-	wm->root = DefaultRootWindow(wm->dpy);
-	wm->current_ws = 0;
-
-	for (int i = 0; i < NUM_WORKSPACES; i++)
-		wm->workspaces[i].clients = NULL;
-
-	XSelectInput(wm->dpy, wm->root, SubstructureRedirectMask | SubstructureNotifyMask);
+	XCloseDisplay(wm->dpy);
 }
 
 int main(void)
@@ -280,6 +311,7 @@ int main(void)
 	WindowManager_GrabKeys(&wm);
 	WindowManager_run(&wm);
 
-	XCloseDisplay(wm.dpy);
+	WindowManager_destroy(&wm);
+
 	return 0;
 }
